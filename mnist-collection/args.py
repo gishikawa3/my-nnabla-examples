@@ -59,6 +59,10 @@ def get_args(monitor_path='tmp.monitor', max_iter=10000, model_save_path=None, l
                         default=False, help="Enable data augmentation of training data.")
     parser.add_argument('--augment-test', action='store_true',
                         default=False, help="Enable data augmentation of testing data.")
+    parser.add_argument('--infer', action='store_true',
+                        default=False, help="Enable inference only.")
+    parser.add_argument("--pretrained", type=str, default='../../nnabla/example/cpp/mnist_runtime/lenet010000.nnp',help='Path to pretrained nnp model')
+     
     args = parser.parse_args()
     if not os.path.isdir(args.model_save_path):
         os.makedirs(args.model_save_path)
