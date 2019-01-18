@@ -144,7 +144,7 @@ def train():
         mnist_cnn_prediction = mnist_resnet_prediction
     else:
         raise ValueError("Unknown network type {}".format(args.net))
-
+    
     # TRAIN
     # Create input variables.
     image = nn.Variable([args.batch_size, 1, 28, 28])
@@ -232,6 +232,100 @@ def train():
     save.save(os.path.join(args.model_save_path,
                            '{}_result.nnp'.format(args.net)), runtime_contents)
 
+def infer():
+    """
+    Main script.
 
+    Steps:
+
+    * Parse command line arguments.
+    * Specify a context for computation.
+    * Initialize DataIterator for MNIST.
+    * Construct a computation graph for inference.
+    * Load parameter variables to infer.
+    * Create monitor instances for saving and displaying infering stats.
+    """
+    args = get_args()
+
+    from numpy.random import seed
+    seed(0)
+
+    # Get context.
+    from nnabla.ext_utils import get_extension_context
+    logger.info("Running in %s" % args.context)
+    ctx = get_extension_context(
+        args.context, device_id=args.device_id, type_config=args.type_config)
+    nn.set_default_context(ctx)
+
+    # Create CNN network for both training and testing.
+    if args.net == 'lenet':
+        mnist_cnn_prediction = mnist_lenet_prediction
+    elif args.net == 'resnet':
+        mnist_cnn_prediction = mnist_resnet_prediction
+    else:
+        raise ValueError("Unknown network type {}".format(args.net))
+
+    # TEST
+    # Create input variables.
+    vimage = nn.Variable([args.batch_size, 1, 28, 28])
+    vlabel = nn.Variable([args.batch_size, 1])
+    # Create prediction graph.
+    vpred = mnist_cnn_prediction(vimage, test=True, aug=args.augment_test)
+
+    # Create Solver.
+    solver = S.Adam(args.learning_rate)
+    solver.set_parameters(nn.get_parameters())
+
+    # Create monitor.
+    from nnabla.monitor import Monitor, MonitorSeries, MonitorTimeElapsed
+    monitor = Monitor(args.monitor_path)
+    monitor_loss = MonitorSeries("Training loss", monitor, interval=10)
+    monitor_err = MonitorSeries("Training error", monitor, interval=10)
+    monitor_time = MonitorTimeElapsed("Training time", monitor, interval=100)
+    monitor_verr = MonitorSeries("Test error", monitor, interval=10)
+
+    # Initialize DataIterator for MNIST.
+    from numpy.random import RandomState
+    data = data_iterator_mnist(args.batch_size, True, rng=RandomState(1223))
+    vdata = data_iterator_mnist(1, False)
+    
+    from nnabla.utils.nnp_graph import NnpLoader
+
+    # Read a .nnp file.
+    nnp = NnpLoader(args.pretrained)
+    # Assume a graph `graph_a` is in the nnp file.
+    net = nnp.get_network(nnp.get_network_names()[0], batch_size=1)
+    # `x` is an input of the graph.
+    x = net.inputs['x']
+    # 'y' is an outputs of the graph.
+    y = net.outputs['y']
+    ve = 0.0
+
+    for j in range(10000):
+        x.d, vlabel.d = vdata.next()
+        y.forward(clear_buffer=True)
+        ve += categorical_error(y.d, vlabel.d)
+    #monitor_verr.add(1, ve / args.val_iter)
+
+    print("acc=",1-ve/10000,".")
+    # append F.Softmax to the prediction graph so users see intuitive outputs
+    runtime_contents = {
+        'networks': [
+            {'name': 'Validation',
+             'batch_size': args.batch_size,
+             'outputs': {'y': F.softmax(vpred)},
+             'names': {'x': vimage}}],
+        'executors': [
+            {'name': 'Runtime',
+             'network': 'Validation',
+             'data': ['x'],
+             'output': ['y']}]}
+    
 if __name__ == '__main__':
-    train()
+    args = get_args()
+    from numpy.random import seed
+    seed(0)
+    if args.infer:
+        infer()
+    else:
+        train()
